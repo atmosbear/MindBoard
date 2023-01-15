@@ -23,7 +23,7 @@ body {
 }
 
 
-.col {
+.entry-column {
     border-radius: 15px;
     height: 100%;
     margin: 10px;
@@ -61,7 +61,7 @@ body {
     color: black;
 }
 
-.gc-six-box {
+.grandchild-holder {
     display: grid;
     grid-auto-flow: column;
     grid-template-columns: repeat(3, 1fr);

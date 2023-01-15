@@ -1,23 +1,25 @@
 type Entry = {
     title: string
-    p: Entry[]
-    c: Entry[]
+    parents: Entry[]
+    children: Entry[]
 }
-
 /** A piece of information that has relations to other information. Typically user created. */
 export function Entry(title: string): Entry {
-    let alreadyExistingEntry = findEntryByTitle(title)
-    if (alreadyExistingEntry === undefined) {
-        let newEntry = { title, p: [], c: [] }
+    /** Returns a new entry object. */
+    function createNewEntryObject() {
+        let newEntry = { title, parents: [], children: [] }
         ENTRIES.push(newEntry)
         return newEntry
-    } else {
+    }
+    let alreadyExistingEntry = findEntryByTitle(title)
+    if (alreadyExistingEntry) {
         return alreadyExistingEntry
+    } else {
+        return createNewEntryObject()
     }
 }
-
 /**
- * Searches the global ENTRIES array for an entry with the requested title and returns it if it exists.
+ * Searches the global ENTRIES array for an entry with the requested title and returns it if it exists. Otherwise, returns undefined.
  */
 export function findEntryByTitle(title: string): undefined | Entry {
     let requestedEntry: Entry | undefined
@@ -28,45 +30,41 @@ export function findEntryByTitle(title: string): undefined | Entry {
     })
     return requestedEntry
 }
-
-function reverseRelation(relation: "p" | "c") {
+/** Returns the opposite relation - parent or child - that is given. */
+function reverseRelation(relation: "parents" | "children"): "parents" | "children" {
     switch (relation) {
-        case "p":
-            return "c"
-        case "c":
-            return "p"
+        case "parents":
+            return "children"
+        case "children":
+            return "parents"
     }
 }
 
 /**
- * Removes an element from the array - just a shortcut method..
+ * Removes an element from an array.
  */
-export function removeFromArray<G>(A: G, fromB: any[G]) {
+export function removeFromArray<G>(A: G, fromB: any[G]): void {
     fromB.splice(fromB[fromB.indexOf(A)], 1)
 }
 
-/** If both the winning and losing array contain the same entry, remove it from the losing array so that the user only sees one. For example, children and grandparents. */
-function aTakesPrecedenceOverB(winningArray: Entry[], losingArray: Entry[]) {
-    losingArray.forEach(loser => {
-        if (winningArray.includes(loser)) {
-            removeFromArray(loser, losingArray)
-        }
-    })
+/** If both the winning and losing array contain the same entry, remove it from the losing array so that only the winning one remains for the user to see. For example, children and grandparents. */
+function aTakesPrecedenceOverB(winningArray: Entry[], losingArray: Entry[]): void {
+    console.warn("Why does this require two loops? After testing, perhaps it doesn't? Experiment.")
     losingArray.forEach(loser => {
         if (winningArray.includes(loser)) {
             removeFromArray(loser, losingArray)
         }
     })
 }
-
-type RelationsList = {
+/** Extraneous relations calculated from only from the perspective of one entry's parents and children - and their parents and children. */
+type RelationsFromThePerspectiveOfAnEntry = {
     fromThePerspectiveOf: Entry;
-    gp: Entry[];
-    gc: Entry[];
-    sib: Entry[];
-    sp: Entry[];
-    ggp: Entry[];
-    ggc: Entry[];
+    grandparents: Entry[];
+    grandchildren: Entry[];
+    siblings: Entry[];
+    spouses: Entry[];
+    greatgrandparents: Entry[];
+    greatgrandchildren: Entry[];
     auncles: Entry[];
     parentsinlaw: Entry[];
     stepparents: Entry[];
@@ -74,145 +72,217 @@ type RelationsList = {
     stepchildren: Entry[];
     childreninlaw: Entry[];
 }
-function clearScreen(): void {
-    Array.from(document.getElementsByClassName("entry")).forEach(el => { el.remove() })
+/** Erases all elements onscreen. Does not clear the global entries array. */
+export function clearScreen(): void {
+    Array.from(document.getElementsByClassName("entry")).forEach((onscreenEntryElement: HTMLDivElement) => { onscreenEntryElement.remove() })
 }
-function renderEntryEl(entry: Entry, type: string) {
-    if (type === "gc") {
+/** Returns all elements within a column. */
+export function getEntryElementsWithinColumn(columnName: ColumnName): HTMLDivElement[] {
+    return Array.from(getColumnElement(columnName).children) as HTMLDivElement[]
+}
+export type ColumnName = "parents" | "children" | "center" | "grandparents" | "grandchildren"
 
-    } else {
-        let el = document.createElement("div")
-        el.classList.add("entry")
-        el.innerText = entry.title
-        el.onclick = () => {
-            clearScreen()
-            render(discoverRelationsFromEverythingToEntry(entry))
-        }
-        if (type === "focused") {
-            el.classList.add("focused");
-            document.getElementById("centcol")!.appendChild(el)
+/** Returns the column element requested. */
+export function getColumnElement(columnName: ColumnName): HTMLDivElement {
+    return document.getElementById(columnName + "-column")! as HTMLDivElement
+}
+/** Returns a HMTLDiv representing the entry, but does not put it on screen. */
+function createEntryDiv(entry: Entry): HTMLDivElement {
+    let entryElement = document.createElement("div")
+    entryElement.classList.add("entry")
+    entryElement.innerText = entry.title
+    entryElement.onclick = () => {
+        clearScreen()
+        render(discoverRelationsFromEverythingToEntry(entry))
+    }
+    return entryElement
+}
+/** Returns an array of the given properties. For example, passing an array of Elements and requesting the "innerHTML" property will return an array of all the innerHTML properties found in that array, unorganized. */
+function getArrayOfSpecificPropertiesInArray(array: any[], property: string): any[] {
+    let propertiesRequested = []
+    array.forEach(entryInArray => {
+        propertiesRequested.push(entryInArray[property])
+    })
+    return propertiesRequested
+}
+
+/** Renders an element onscreen. */
+function renderEntryEl(entry: Entry, type: string) {
+    if (type === "grandchildren") {
+        let childEntryElements: Element[] = getEntryElementsWithinColumn("children")
+        let childEntryElementTitles = getArrayOfSpecificPropertiesInArray(childEntryElements, "innerText")
+        let foundParent: Entry | undefined
+        entry.parents.forEach((parentOfGC: Entry) => {
+            if (childEntryElementTitles.includes(parentOfGC.title)) {
+                foundParent = parentOfGC
+            }
+        })
+        if (foundParent) {
+            let grandchildrenHolders = getEntryElementsWithinColumn("grandchildren")
+            let positionOfChildEntry = getArrayOfSpecificPropertiesInArray(childEntryElements, "innerHTML").indexOf(foundParent.title)
+            while (grandchildrenHolders.length <= positionOfChildEntry) {
+                let newGrandchildHolderElement = document.createElement("div")
+                newGrandchildHolderElement.id = "grandchild-holder-" + grandchildrenHolders.length
+                newGrandchildHolderElement.classList.add("grandchild-holder")
+                getColumnElement("grandchildren").appendChild(newGrandchildHolderElement)
+                grandchildrenHolders = getEntryElementsWithinColumn("grandchildren")
+            }
+            grandchildrenHolders.forEach((holder, i) => {
+                if (i === positionOfChildEntry) {
+                    let el = createEntryDiv(entry)
+                    el.classList.add("gcentry")
+                    el.classList.add("entry")
+                    holder.appendChild(el)
+                }
+            })
         } else {
-            document.getElementById(type + "col")!.appendChild(el)
+            throw new Error("No parent was found for the GC entry!")
+        }
+    } else {
+        let newEntryElement = createEntryDiv(entry)
+        if (type === "focused") {
+            newEntryElement.classList.add("focused");
+            document.getElementById("center-column")!.appendChild(newEntryElement)
+        } else {
+            document.getElementById(type + "-column")!.appendChild(newEntryElement)
         }
     }
 }
-export function render(relations: RelationsList) {
-    relations.gp.forEach(gp => {
-        renderEntryEl(gp, "gp")
+/** Decides how to render each relation and dispatches it to be rendered within the proper column. */
+export function render(relations: RelationsFromThePerspectiveOfAnEntry) {
+    relations.grandparents.forEach(grandparent => {
+        renderEntryEl(grandparent, "grandparents")
     })
-    relations.fromThePerspectiveOf.p.forEach(parent => {
-        renderEntryEl(parent, "p")
+    relations.fromThePerspectiveOf.parents.forEach(parent => {
+        renderEntryEl(parent, "parents")
     })
-    relations.fromThePerspectiveOf.c.forEach(child => {
-        renderEntryEl(child, "c")
+    relations.fromThePerspectiveOf.children.forEach(child => {
+        renderEntryEl(child, "children")
     })
-    relations.gc.forEach(gc => {
-        renderEntryEl(gc, "gc")
+    relations.grandchildren.forEach(grandchild => {
+        renderEntryEl(grandchild, "grandchildren")
     })
-    relations.sib.forEach(sib => {
-        console.log("Rendering", sib, "a sibling", "as center")
-        renderEntryEl(sib, "cent")
+    relations.siblings.forEach(sibling => {
+        if (DEV)
+            console.log("Rendering", sibling, "a sibling", "as center")
+        renderEntryEl(sibling, "center")
     })
-    relations.sp.forEach(spouse => {
-        console.log("Rendering", spouse, "a spouse", "as center")
-        renderEntryEl(spouse, "cent")
+    relations.spouses.forEach(spouse => {
+        if (DEV)
+            console.log("Rendering", spouse, "a spouse", "as center")
+        renderEntryEl(spouse, "center")
     })
     // skip GGP and GGC
     relations.auncles.forEach(auncle => {
-        console.log("Rendering", auncle, "a auncle", "as parent")
-        renderEntryEl(auncle, "p")
+        if (DEV)
+            console.log("Rendering", auncle, "a auncle", "as parent")
+        renderEntryEl(auncle, "parents")
     })
     relations.parentsinlaw.forEach(parentinlaw => {
-        console.log("Rendering", parentinlaw, "a parentinlaw", "as parent")
-        renderEntryEl(parentinlaw, "p")
+        if (DEV)
+            console.log("Rendering", parentinlaw, "a parentinlaw", "as parent")
+        renderEntryEl(parentinlaw, "parents")
     })
     relations.stepparents.forEach(stepparent => {
-        console.log("Rendering", stepparent, "a stepparent", "as parent")
-        renderEntryEl(stepparent, "p")
+        if (DEV)
+            console.log("Rendering", stepparent, "a stepparent", "as parent")
+        renderEntryEl(stepparent, "parents")
     })
     relations.niblings.forEach(nibling => {
-        console.log("Rendering", nibling, "a nibling", "as child")
-        renderEntryEl(nibling, "c")
+        if (DEV)
+            console.log("Rendering", nibling, "a nibling", "as child")
+        renderEntryEl(nibling, "children")
     })
     relations.stepchildren.forEach(stepchild => {
-        console.log("Rendering", stepchild, "a stepchild", "as child")
-        renderEntryEl(stepchild, "c")
+        if (DEV)
+            console.log("Rendering", stepchild, "a stepchild", "as child")
+        renderEntryEl(stepchild, "children")
     })
     relations.childreninlaw.forEach(childinlaw => {
-        console.log("Rendering", childinlaw, "a child in law", "as child")
-        renderEntryEl(childinlaw, "c")
+        if (DEV)
+            console.log("Rendering", childinlaw, "a child in law", "as child")
+        renderEntryEl(childinlaw, "children")
     })
     renderEntryEl(relations.fromThePerspectiveOf, "focused")
 }
 
-/**Dynamically calculates grandparent and grandchild relations. */
-export function discoverRelationsFromEverythingToEntry(entry: Entry): RelationsList {
-    let gp: Entry[] = []
-    let gc: Entry[] = []
-    let ggp: Entry[] = []
-    let ggc: Entry[] = []
-    let sib: Entry[] = []
-    let sp: Entry[] = []
+function keyboardControls() {
+    console.error("Not implemented: keyboard controls.")
+    // window.addEventListener("keydown", (e) => {
+    //     if (e.key === "Enter") {
+    //         console.log(e.key)
+    //     }
+    // })
+}
+
+/**Dynamically calculates extraneous relations using only the original entry's parents and children (and their parents and children). */
+export function discoverRelationsFromEverythingToEntry(entry: Entry): RelationsFromThePerspectiveOfAnEntry {
+    let grandparents: Entry[] = []
+    let grandchildren: Entry[] = []
+    let greatgrandparents: Entry[] = []
+    let greatgrandchildren: Entry[] = []
+    let siblings: Entry[] = []
+    let spouses: Entry[] = []
     let stepparents: Entry[] = []
     let auncles: Entry[] = []
     let parentsinlaw: Entry[] = []
     let niblings: Entry[] = []
     let stepchildren: Entry[] = []
     let childreninlaw: Entry[] = []
-    entry.p.forEach(parent => {
-        parent.p.forEach(grandparent => {
-            if (!gp.includes(grandparent))
-                gp.push(grandparent)
-            grandparent.p.forEach(greatgrandparent => {
-                if (!ggp.includes(greatgrandparent))
-                    ggp.push(greatgrandparent)
+    entry.parents.forEach(parent => {
+        parent.parents.forEach(grandparent => {
+            if (!grandparents.includes(grandparent))
+                grandparents.push(grandparent)
+            grandparent.parents.forEach(greatgrandparent => {
+                if (!greatgrandparents.includes(greatgrandparent))
+                    greatgrandparents.push(greatgrandparent)
             })
-            grandparent.c.forEach(auncle => {
+            grandparent.children.forEach(auncle => {
                 if (!auncles.includes(auncle) && auncle !== parent)
                     auncles.push(auncle)
             })
         })
-        parent.c.forEach(sibling => {
+        parent.children.forEach(sibling => {
             if (sibling !== entry) {
-                if (!sib.includes(sibling))
-                    sib.push(sibling)
-                sibling.p.forEach(stepparent => {
+                if (!siblings.includes(sibling))
+                    siblings.push(sibling)
+                sibling.parents.forEach(stepparent => {
                     if (parent !== stepparent && !stepparents.includes(stepparent)) {
                         stepparents.push(stepparent)
                     }
                 })
-                sibling.c.forEach(nibling => {
-                    if (!entry.c.includes(nibling) && !niblings.includes(nibling))
+                sibling.children.forEach(nibling => {
+                    if (!entry.children.includes(nibling) && !niblings.includes(nibling))
                         niblings.push(nibling)
                 })
             }
         })
     })
-    entry.c.forEach(child => {
-        child.c.forEach(grandchild => {
-            if (!gc.includes(grandchild))
-                gc.push(grandchild)
-            grandchild.c.forEach(greatgrandchild => {
-                if (!ggc.includes(greatgrandchild))
-                    ggc.push(greatgrandchild)
+    entry.children.forEach(child => {
+        child.children.forEach(grandchild => {
+            if (!grandchildren.includes(grandchild))
+                grandchildren.push(grandchild)
+            grandchild.children.forEach(greatgrandchild => {
+                if (!greatgrandchildren.includes(greatgrandchild))
+                    greatgrandchildren.push(greatgrandchild)
             })
-            // grandchild.p.forEach(childinlaw => {
-            //     if (childinlaw !== child && !childreninlaw.includes(childinlaw))
-            //         childreninlaw.push(childinlaw)
-            // })
+            grandchild.parents.forEach(childinlaw => {
+                if (childinlaw !== child && !childreninlaw.includes(childinlaw))
+                    childreninlaw.push(childinlaw)
+            })
         })
-        child.p.forEach(spouse => {
+        child.parents.forEach(spouse => {
             if (spouse !== entry)
-                if (!sp.includes(spouse)) {
-                    sp.push(spouse)
+                if (!spouses.includes(spouse)) {
+                    spouses.push(spouse)
                 }
-            spouse.p.forEach(parentinlaw => {
+            spouse.parents.forEach(parentinlaw => {
                 if (parentinlaw !== spouse && !parentsinlaw.includes(parentinlaw)) {
                     parentsinlaw.push(parentinlaw)
                 }
             })
-            spouse.c.forEach(stepchild => {
-                if (!entry.c.includes(stepchild) && !stepchildren.includes(stepchild)) {
+            spouse.children.forEach(stepchild => {
+                if (!entry.children.includes(stepchild) && !stepchildren.includes(stepchild)) {
                     stepchildren.push(stepchild)
                 }
             })
@@ -227,27 +297,36 @@ export function discoverRelationsFromEverythingToEntry(entry: Entry): RelationsL
             })
         })
     }
-    prioritize([[entry], entry.c, entry.p, auncles, parentsinlaw, stepparents, sib, sp, niblings, stepchildren, childreninlaw, gp, gc, ggp, ggc])
-    return { fromThePerspectiveOf: entry, gp, gc, sib, sp, ggp, ggc, auncles, parentsinlaw, stepparents, niblings, stepchildren, childreninlaw }
+    prioritize([[entry], entry.children, entry.parents, auncles, parentsinlaw, stepparents, siblings, spouses, niblings, stepchildren, childreninlaw, grandparents, grandchildren, greatgrandparents, greatgrandchildren])
+    return { fromThePerspectiveOf: entry, grandparents, grandchildren, siblings, spouses, greatgrandparents, greatgrandchildren, auncles, parentsinlaw, stepparents, niblings, stepchildren, childreninlaw }
 }
 /** Searches for direct (aka parent and child) links between two entries and removes them both backwards and forwards. */
 export function disconnect(entry: Entry, entry2: Entry): void {
-    if (entry.p.includes(entry2)) {
-        removeFromArray(entry2, entry.p)
+    if (entry.parents.includes(entry2)) {
+        removeFromArray(entry2, entry.parents)
     }
-    if (entry.c.includes(entry2)) {
-        removeFromArray(entry2, entry.c)
+    if (entry.children.includes(entry2)) {
+        removeFromArray(entry2, entry.children)
     }
-    if (entry2.p.includes(entry)) {
-        removeFromArray(entry, entry2.p)
+    if (entry2.parents.includes(entry)) {
+        removeFromArray(entry, entry2.parents)
     }
-    if (entry2.c.includes(entry)) {
-        removeFromArray(entry, entry2.c)
+    if (entry2.children.includes(entry)) {
+        removeFromArray(entry, entry2.children)
     }
 }
 
 /** Links two entries. */
-export function link(entry: Entry, childOrParentOf: "c" | "p", entry2: Entry): void {
+export function link(entry: Entry, childOrParentOf: string, entry2: Entry): void {
+    function expandAbbreviation() {
+        if (childOrParentOf === "c") {
+            childOrParentOf = "children"
+        }
+        if (childOrParentOf === "p") {
+            childOrParentOf = "parents"
+        }
+    }
+    expandAbbreviation()
     // allow user to pass strings to get entries (which also makes them if they don't exist)
     if (typeof entry === "string") {
         entry = Entry(entry)
@@ -256,14 +335,15 @@ export function link(entry: Entry, childOrParentOf: "c" | "p", entry2: Entry): v
         entry2 = Entry(entry2)
     }
     // do not allow nodes to be both parents and child of another
-    if (entry.p.includes(entry2) || entry.c.includes(entry2) || entry2.p.includes(entry) || entry2.c.includes(entry)) {
+    if (entry.parents.includes(entry2) || entry.children.includes(entry2) || entry2.parents.includes(entry) || entry2.children.includes(entry)) {
         disconnect(entry, entry2)
     }
-    if (!entry[reverseRelation(childOrParentOf)].includes(entry2))
-        entry[reverseRelation(childOrParentOf)].push(entry2)
-    if (!entry2[childOrParentOf].includes(entry))
-        entry2[childOrParentOf].push(entry)
+    // @ts-expect-error
+    if (!entry[reverseRelation(childOrParentOf)].includes(entry2)) entry[reverseRelation(childOrParentOf)].push(entry2)
+    if (!entry2[childOrParentOf].includes(entry)) entry2[childOrParentOf].push(entry)
 
 }
 
 export let ENTRIES: Entry[] = []
+let DEV = false
+keyboardControls()
